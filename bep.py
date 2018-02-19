@@ -9,7 +9,7 @@
 
 # WARNING: Currrent implementation works only for closed shell molecules!
 
-# A very simple model from Talukder et al is alson implemented
+# A very simple model valid only for atoms from Talukder et al is alson implemented
 # Empirical model for electron impact ionization cross sections
 # M.R. Talukder et al The European Physical Journal D 46, 281-287, 2008
 
@@ -25,14 +25,14 @@ def read_cmd():
          electron impact photoionization cross section from first principles"
    parser = argparse.ArgumentParser(description=desc)
    parser.add_argument("-i", "--input_file", dest="inp_file", help="Gaussian output file with MO parameters.")
-   parser.add_argument("-m", "--model", dest="inp_file",default="bep", help="Which model? (bep|talukder).")
+   parser.add_argument("-m", "--model", dest="model",default="bep", help="Which model? (bep|talukder).")
    parser.add_argument("-U", dest="U", help="electron orbital kinetic energy [ev]")
    parser.add_argument("--Tmax", dest="Tmax",default=1000, help="maximum kin. energy of ionizing electron [ev]")
    parser.add_argument("-T", dest="T", help="kinetic energy [ev] of the ionizing electron")
    parser.add_argument("-B", dest="B", help="electron binding energy [ev]")
    parser.add_argument("-N", dest="N", default=2, help="number of eletrons in the orbital")
-   parser.add_argument("-n", dest="n", default=2, help="Talukder model, principal quantum number")
-   parser.add_argument("-l", dest="l", default=2, help="Talukder model, azimuthal quantum number")
+   parser.add_argument("-n", dest="n", help="Talukder model, principal quantum number")
+   parser.add_argument("-l", dest="l", help="Talukder model, azimuthal quantum number")
    return parser.parse_args()
 
 def bep_cross_section(T, B, U, N, charge):
@@ -64,10 +64,11 @@ def bep_cross_section(T, B, U, N, charge):
    sigma_BEB = x1 * (x2 + x3)
    return sigma_BEB
 
+
 def talukder_Anl(B, n, l):
    """Implements equations 3 on page 282
    B = ionization energy
-   n principal quantum number
+   n = principal quantum number
    l = azimuthal quantum number"""
    R = 0.5 # Rydberg energy in Atomic units
    Ur = B / R
@@ -75,15 +76,16 @@ def talukder_Anl(B, n, l):
       if l == 0:
          Anl = 3.97 * 10**(-11) * Ur / (1+20.74*Ur)**(3.6)    
       else:
-         Anl = 3.88 * 10**(-14)*Ur / (1+39.9*Ur)**3
+         Anl = 3.88 * 10**(-14) * Ur / (1+6.96*Ur)**3
    else:
       if l == 0:
-         Anl = 1.22 * 10**(-6) * Ur / (1+566.46*Ur)**(3.5)    
+         Anl = 9.14*10**(-11)*Ur / (1+68.32*Ur)**3
       else:
-         Anl = 9.14*10**(-11)*Ur / (1+60.95*Ur)**3
+         Anl = 1.22 * 10**(-6) * Ur / (1+566.46*Ur)**(3.5)
 
    # Convert from cm**2 to atomic units
-   return Anl * 10**24 * ANG2BOHR**2 
+   return Anl * 10**16 * ANG2BOHR**2 
+
 
 def talukder_Bnl(B, n, l):
    """Implements equations 3 on page 282
@@ -94,17 +96,18 @@ def talukder_Bnl(B, n, l):
    Ur = B / R
    if n == 1:
       if l == 0:
-         Bnl = 3.97 * 10**(-11) * Ur / (1+20.74*Ur)**(3.6)    
+         Bnl = 2.29 * 10**(-10) * Ur / (1+39.9*Ur)**(3.6)    
       else:
-         Bnl = 3.88 * 10**(-14)*Ur / (1+39.9*Ur)**3
+         Bnl = 4.36 * 10**(-16) * Ur / (1+0.33*Ur)**8
    else:
       if l == 0:
-         Bnl = 1.22 * 10**(-6) * Ur / (1+566.46*Ur)**(3.5)    
+         Bnl = 3.83 * 10**(-11) * Ur / (1+60.95*Ur)**3    
       else:
-         Bnl = 9.14*10**(-11)*Ur / (1+60.95*Ur)**3
+         Bnl = - 4.39 * 10**(-9) * Ur / (1+102.87*Ur)**3.7
 
    # Convert from cm**2 to atomic units
-   return Bnl * 10**24 * ANG2BOHR**2 
+   return Bnl * 10**16 * ANG2BOHR**2 
+
 
 def talukder_cross_section(T, B, n, l, N):
    """Calculates electron impact ionization cross section for a given MO.
@@ -117,12 +120,11 @@ def talukder_cross_section(T, B, n, l, N):
 #  for n in range(1,8):
 #     for l in range(n):
 #        for i in range(2*l+1):
-#           print("n l ",n,l)
    Anl = talukder_Anl(B, n, l)
    Bnl = talukder_Bnl(B, n, l)
    sigma = Anl*math.log(T/B)+Bnl*(1-B/T)
-   sigma *= B * N / T
-   return
+   sigma = sigma * B * N / T
+   return sigma
 
 
 def parse_gaussian(infile, E_orb, Ekin_orb):
@@ -175,7 +177,7 @@ if __name__ == "__main__":
 
    if not opts.inp_file and (not opts.B and not opts.U):
       print("ERROR: You did not provide Gaussian output file as a parameter")
-      print("Alternatively, you should provide B and U parameters")
+      print("Alternatively, you could provide B and U parameters")
       print(help_me)
       sys.exit(1)
 
@@ -185,14 +187,13 @@ if __name__ == "__main__":
       Eorb.append(float(opts.B) / AU2EV)
       Ekin.append(float(opts.U) / AU2EV)
 
-   N = opts.N
+   N = int(opts.N)
    charge = 0
 
    Ts = []  # Calculate cross sections for these incident kinetic energies
    if opts.T:
       Ts.append(float(opts.T) / AU2EV)
    else:
-      # For now, let's just go to 1000 eV
       Ts = [x/AU2EV for x in range(int(Eorb[-1]*AU2EV), int(opts.Tmax) ) ]
 
    print("# Incident electron energy [eV] | Total Sigma | Sigmas [Angstrom^2] (core electrons first)")
@@ -202,24 +203,38 @@ if __name__ == "__main__":
       if opts.n and opts.l:
          n = opts.n
          l = opts.l
+         m_l = -l
       else:
          n = 1
          l = 0
+         m_l = 0
       # Iterate over orbitals
       for i in range(len(Eorb)):
          if Eorb[i] <= t:
             if opts.model == "bep":
                s = bep_cross_section(t, Eorb[i], Ekin[i], N, charge)
-            if opts.model == "talukder":
+            elif opts.model == "talukder":
                s = talukder_cross_section(t, Eorb[i], n, l, N)
             else:
                print("ERROR: Invalid model!")
-               print(help)
+               print(help_me)
                sys.exit(1)
          else:
             s = 0
+
          sigma.append(s / ANG2BOHR / ANG2BOHR)
          total_sigma += sigma[-1]
+
+         # Aufbau principle (needed for Talukber model)
+         if m_l == l:
+             l += 1
+             m_l = -l
+         else:
+             m_l += 1
+         if l == n:
+             l = 0
+             n += 1
+             m_l = 0
 
       print(t*AU2EV, total_sigma, " ".join(str(s) for s in sigma))
 
